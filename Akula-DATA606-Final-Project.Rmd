@@ -1,0 +1,567 @@
+---
+title: "Analyzing Global Findex Data Using ANOVA And GLM"
+author: "Pavan Akula"
+date: "May 14, 2017"
+output: html_document
+---
+
+##Introduction
+The goal of this project is to demonstrate statistical analysis of survey data using Analysis of Variance(`ANOVA`) and Generalized Linear Model(`GLM`). The Global Financial Inclusion, _Global Findex_ database, 2014 edition will be used to solve following questions. 
+
+- Is there a difference in financial account ownership between _India_, _China_, and _G7 Nations_ by age group? 
+
+- _India_ has a good portion of the population, that does not have a financial account. Is there any difference in reasons for not having financial account across various groups?
+
+- Using _India_ data, develop a predictive model to identify whether a respondent has a financial account. 
+
+####Method and Software usage
+The principles of tidy data provided by _Hadley Wickham_ are followed throughout the process of cleaning and preparing the data for analysis. The software tool used for the project is `R`. Most of the statistical functions are used from `stats` package. `graphs` are shown using `ggplot2` package. 
+
+####Data Dictionary
+Information about the variables can be obtained from _Global-Findex-Data-Dictionary.csv_. Actual survey results in its raw form are present in _micro\_world.csv_. Variables may contain the recorded results of a direct question asked, or be derived in some way. 
+
+####Libraries used.
+
+```{r, echo=T, warning=F, message=F}
+if (!require('plyr')) install.packages('plyr')                #Data frame and table functions
+if (!require('dplyr')) install.packages('dplyr')              #Data frame and table functions
+if (!require('stringr')) install.packages('stringr')          #String manuplilation functions
+if (!require('ggplot2')) install.packages('ggplot2')          #Graphics display
+if (!require('tidyr')) install.packages('tidyr')              #Tidy data using spread() and gather() functions
+if (!require('gridExtra')) install.packages('gridExtra')      #Display graphs side by side
+if (!require('knitr')) install.packages('knitr')              #Report display, table format
+if (!require('stats')) install.packages('stats')
+if (!require('caret')) install.packages('caret')              #For confusion matrix
+```
+
+####Data Preparation
+The survey was carried out over the 2014 calendar year by Gallup, Inc. in more than 160 countries and over 140 languages, using randomly selected, nationally representative samples. The target population is the entire civilian population of age 15 years and above. This is an observational data. Most of the variables are stored as numerical values, and they are converted into character based categorical variables. Survey question surrounding income is based on household income quintile(1 - Poorest 20%, 2 - Second 20%, 3 - Middle 20%, 4 - Fourth 20%, 5 - Richest 20%). 
+.
+```{r, echo=T}
+agef <- function(x){
+  if (is.na(x)){
+    age <- NA
+    return(age)
+  }
+  if (x < 26){
+    age <- "Below 26"
+  } else if(x > 25 & x < 36){
+    age <- "26 - 35"
+  } else if(x > 35 & x < 46){
+    age <- "36 - 45"
+  } else if(x > 45 & x < 56){
+    age <- "46 - 55"
+  } else if(x > 55 & x < 66){
+    age <- "56 - 65"
+  } else if (x > 65){
+    age <- "Above 65"
+  } else{
+    age <- NA
+  }
+  return(age)
+}
+
+incomef <- function(x){
+  if (is.na(x)){
+    inc <- NA
+    return(inc)
+  }
+  if (x == 1){
+    inc <- "Poorest 20%"
+  } else if(x == 2){
+    inc <- "Second 20%"
+  } else if(x == 3){
+    inc <- "Middle 20%"
+  } else if(x == 4){
+    inc <- "Fourth 20%"
+  } else if(x == 5){
+    inc <- "Richest 20%"
+  } else{
+    inc <- NA
+  }
+  return(inc)
+}
+
+eduf <- function(x){
+  if (is.na(x)){
+    col <- NA
+    return(col)
+  }
+  if (x == 1){
+    col <- "HS or Less"
+  } else if(x == 2){
+    col <- "Some College"
+  } else if(x == 3){
+    col <- "College Grad"
+  } else{
+    col <- NA
+  }
+  return(col)
+}
+
+age.order <- data.frame(age<-"Below 26", order<-1, stringsAsFactors = F)
+age.order <- rbind(age.order, c("26 - 35", 2))
+age.order <- rbind(age.order, c("36 - 45", 3))
+age.order <- rbind(age.order, c("46 - 55", 4))
+age.order <- rbind(age.order, c("56 - 65", 5))
+age.order <- rbind(age.order, c("Above 65", 6))
+colnames(age.order) <- c("age","order")
+age.order$order <- as.integer(age.order$order)
+
+income.order <- data.frame(age<-"Poorest 20%", order<-1, stringsAsFactors = F)
+income.order <- rbind(income.order, c("Second 20%", 2))
+income.order <- rbind(income.order, c("Middle 20%", 3))
+income.order <- rbind(income.order, c("Fourth 20%", 4))
+income.order <- rbind(income.order, c("Richest 20%", 5))
+colnames(income.order) <- c("income","order")
+income.order$order <- as.integer(income.order$order)
+
+edu.order <- data.frame(edu<-"HS or Less", order<-1, stringsAsFactors = F)
+edu.order <- rbind(edu.order, c("Some College", 2))
+edu.order <- rbind(edu.order, c("College Grad", 3))
+colnames(edu.order) <- c("edu","order")
+edu.order$order <- as.integer(edu.order$order)
+
+attOrder <- age.order %>% select(attName=age, order)
+attOrder <- rbind(attOrder, as.data.frame(income.order %>% mutate(order = order + 20) %>% select(attName=income, order)))
+attOrder <- rbind(attOrder, as.data.frame(edu.order %>% mutate(order = order + 30) %>% select(attName=edu, order)))
+attOrder <- rbind(attOrder, data.frame(attName="Male",order = 0, stringsAsFactors = F))
+attOrder <- rbind(attOrder, data.frame(attName="Female",order = -1, stringsAsFactors = F))
+attOrder <- arrange(attOrder, order)
+
+reasons <- data.frame("Cannot get one", 1, stringsAsFactors = F)
+reasons <- rbind(reasons, c("Family member already has one", 2))
+reasons <- rbind(reasons, c("Financial institution too far away", 3))
+reasons <- rbind(reasons, c("Lack of documentation", 4))
+reasons <- rbind(reasons, c("Lack of money", 5))
+reasons <- rbind(reasons, c("Lack of trust", 6))
+reasons <- rbind(reasons, c("No need for financial services", 7))
+reasons <- rbind(reasons, c("Religious reasons", 8))
+reasons <- rbind(reasons, c("Too expensive to have any account", 9))
+colnames(reasons) <- c("reason","order")
+
+#Change path
+fileDir <- "D:/CUNY/606/Project-1/FinalProject"
+
+#Load survey data.
+world.findex.data <- read.csv(file.path(fileDir, "micro_world.csv"), stringsAsFactors=FALSE) 
+```
+
+##Question 1: Is there a difference in financial account ownership between _India_, _China_ and _G7 Nations_ by age group?
+
+I will be using `ANOVA` statistical method to identify if there is a difference in financial account ownership. Analysis of Variance (ANOVA) is a statistical method used for testing differences between two or more means. Data has to meet following conditions before applying ANOVA. If any of the conditions are not satisfied, the results from the use of ANOVA techniques may be unreliable. 
+
+- Each sample is an independent random sample
+
+As data is collected by Gallup, Inc from each country on a random basis. Survey data meets the condition of _independence_.
+
+- The distribution of the response variable follows a normal distribution
+
+For the scope of the project, I will be using _account_ attribute as the response variable. This variable has `two` possible outcomes `yes` if the respondent has an account with financial institution otherwise `no`. Observations with missing values are discarded. This condition can be checked with the use of `graphs`; I will be using `box plot` and `side-by-side dot plot` to identify the normal distribution of the response variable.
+
+- The variability across the groups is about equal.
+
+I will be using `box plot` to identify variability across the groups.
+
+Following `graph` shows a total number of respondents having an account with the financial institution.
+
+```{r, echo=T}
+#Get India, China and G7 Nations data
+in_cn_g7.data <- world.findex.data %>% 
+  filter(economy %in% c("India", "China", "Canada", "France", "Germany", "Italy", "Japan", "United Kingdom", "United States")) %>% 
+  select(economy, female, age, educ, inc_q, account)
+
+in_cn_g7.data$hasAccount <- ifelse(in_cn_g7.data$account == 1, "Yes", ifelse(in_cn_g7.data$account == 2, "No", NA))
+in_cn_g7.data$gender <- ifelse(in_cn_g7.data$female == 1, "Female", ifelse(in_cn_g7.data$female == 2, "Male",NA))
+in_cn_g7.data = cbind(in_cn_g7.data, ldply(in_cn_g7.data$age, agef))
+colnames(in_cn_g7.data)[ncol(in_cn_g7.data)] <- "ageGroup"
+in_cn_g7.data = cbind(in_cn_g7.data, ldply(in_cn_g7.data$inc_q, incomef))
+colnames(in_cn_g7.data)[ncol(in_cn_g7.data)] <- "incomeGroup"
+in_cn_g7.data = cbind(in_cn_g7.data, ldply(in_cn_g7.data$educ, eduf))
+colnames(in_cn_g7.data)[ncol(in_cn_g7.data)] <- "eduGroup"
+
+#Graphical display
+in_cn_g7.data %>%
+  filter(hasAccount == "Yes") %>% 
+  group_by(economy) %>% 
+  summarise(value = n()) %>%
+ggplot(aes(x=economy, y=value, fill = value)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Country", y="Accounts", title = "Population Sample With Financial Accounts", subtitle = "Comparision between countries") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + geom_text(aes(label=value), vjust=0, color="black") + labs(fill = "Ownership")
+```
+
+Following data shows comparision of financial account ownership by age group accross countries.
+
+```{r, echo=T}
+#Group data by age group
+age.in_cn_g7.data <- in_cn_g7.data %>%
+  filter(hasAccount == "Yes") %>% 
+  group_by(economy, ageGroup) %>% 
+  summarise(value = n()) %>% 
+  na.omit() %>% 
+  inner_join(age.order, by = c("ageGroup" = "age")) %>% 
+  arrange(economy, order) 
+
+age.in_cn_g7.data <- transform(age.in_cn_g7.data, ageGroup=factor(ageGroup,levels=unique(ageGroup)))
+colnames(age.in_cn_g7.data)[colnames(age.in_cn_g7.data)=="ageGroup"] <- "Age Group"
+
+#Display data in table format
+age.in_cn_g7.data %>% 
+  spread(economy, value) %>%
+  select(-order) %>% 
+  kable(format='pandoc', caption = "Population Sample With Financial Accounts - Countries by Age Group")
+```
+
+Following graph show that data, doesn't have the ideal bell-shaped appearance, and it suggests there are some outliers in the data.
+
+```{r, echo=T, warning=F, message=F}
+#Graphical display
+ggplot(age.in_cn_g7.data, aes(x=economy, y=value, fill = `Age Group`)) + geom_histogram(width=.9,stat="identity",position = "dodge") + labs(x="Country", y="Accounts", title = "Population Sample With Financial Accounts", subtitle = "Comparision between countries by Age Group") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + labs(fill = "Ownership") + scale_fill_brewer(palette="Paired")
+
+```
+
+Side-by-side dot plot and box plot show data within each group are very volatile. It suggests _distribution of the response variable follows a normal distribution_ and _variability_ across the groups exists. This meets `second` and `third` conditions.
+
+```{r, echo=T}
+qplot(x = economy, y = value, data = age.in_cn_g7.data, color = value) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_smooth(method = "lm") +
+  labs(x="Country", y="Accounts", title = "Financial Account Ownership By Country", subtitle = "Side-by-side dot plot", color = "Ownership") 
+```
+
+```{r, echo=T}
+fun_mean <- function(x){
+  return(data.frame(y=round(mean(x),3),label=round(mean(x,na.rm=T),3)))
+}
+
+fill <- "#4271AE"
+line <- "#1F3552"
+
+age.in_cn_g7.data %>% 
+  ggplot(aes(x = economy, y = value)) +
+        geom_boxplot(fill = fill, colour = line) +
+        scale_y_continuous(name = "Account") +
+        scale_x_discrete(name = "Country") +
+        stat_summary(fun.y = mean, geom="point",color="white", size=1) +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        stat_summary(fun.data = fun_mean, geom="text", vjust=-0.7) +
+        ggtitle("Average(Mean) Account Ownership By Country")
+```
+
+As data meets conditions of ANOVA, 
+
+**_Null hypothesis: There is no difference in account ownership between countries and age group._** 
+
+$H_0: {\mu}_{can} = {\mu}_{chn} = {\mu}_{fra} = {\mu}_{deu} = {\mu}_{ind} = {\mu}_{ita} = {\mu}_{jpn} = {\mu}_{uk} = {\mu}_{usa}$ 
+
+**_Alternative hypothesis: There is difference in account ownership between countries and age group._**
+
+$H_A: {\mu}_{can} \ne {\mu}_{chn} \ne {\mu}_{fra} \ne {\mu}_{deu} \ne {\mu}_{ind} \ne {\mu}_{ita} \ne {\mu}_{jpn} \ne {\mu}_{uk} \ne {\mu}_{usa}$ 
+
+```{r, echo=T, }
+options("scipen"=100, "digits"=4)
+#Apply ANOVA
+age.anova <- aov(value ~ `Age Group` + economy, data = age.in_cn_g7.data)
+summary(age.anova)
+
+#Draw residuals plot to test is data is normally distributed 
+ggplot(data=as.data.frame(qqnorm( age.anova$residuals , plot=F)), mapping=aes(x=x, y=y)) + 
+    geom_point() + geom_smooth(method="lm", se=FALSE)  +
+        scale_y_continuous(name = "Sample Quantiles") +
+        scale_x_discrete(name = "Theoretical Quantiles") +
+        ggtitle("Normal Q-Q Plot")
+
+```
+
+###Conclusion
+**_- Data meets all `three` conditions of `ANOVA`._**
+
+**_- The normal plot of the residuals shows data points lie pretty close to the line. Some deviation is noticed near the ends. This suggests data is nearly normal._**
+
+**_- The `p-value` of the test is 0.037, less than the default significance level of $\alpha = 0.05$. We accept null hypothesis $H_0$. There is no difference in account ownership between countries and age group._**
+
+##Question 2: _India_ has a good portion of the population, that does not have a financial account. Is there any difference in reasons for not having financial account across various groups?
+
+I will be using `linear regression` and then apply `ANOVA` technique to answer the question. Following `graph` shows a total number of respondents that does not have an account with the financial institution for various reasons.
+
+```{r, echo=T}
+#Get India data
+india.data <- world.findex.data %>% 
+  filter(economy == "India") %>% 
+  select(economy, female, age, educ, inc_q, account, q8a, q8b, q8c, q8d, q8e, q8f, q8g, q8h, q8i)
+
+#Convert numerical values to categorical values
+india.data$hasAccount <- ifelse(india.data$account == 1, "Yes", ifelse(india.data$account == 2, "No", NA))
+india.data$gender <- ifelse(india.data$female == 1, "Female", ifelse(india.data$female == 2, "Male",NA))
+india.data = cbind(india.data, ldply(india.data$age, agef))
+colnames(india.data)[ncol(india.data)] <- "ageGroup"
+india.data = cbind(india.data, ldply(india.data$inc_q, incomef))
+colnames(india.data)[ncol(india.data)] <- "incomeGroup"
+india.data = cbind(india.data, ldply(india.data$educ, eduf))
+colnames(india.data)[ncol(india.data)] <- "eduGroup"
+
+#Subset data by respondents who do not have accounts
+no.account <- india.data %>% filter(account==2)
+no.account <- no.account %>% filter(!is.na(age))
+no.account.tidy <- no.account %>% 
+  select (gender, ageGroup, incomeGroup, eduGroup, q8a, q8b, q8c, q8d, q8e, q8f, q8g, q8h, q8i) %>% 
+  gather(noAccountReason, value, -gender, -ageGroup, -incomeGroup, -eduGroup) %>% filter(value==1)
+
+#Expand the questions
+no.account.tidy$noAccountReason[no.account.tidy$noAccountReason == "q8a"] <- "Financial institution too far away"
+no.account.tidy$noAccountReason[no.account.tidy$noAccountReason == "q8b"] <- "Too expensive to have any account"
+no.account.tidy$noAccountReason[no.account.tidy$noAccountReason == "q8c"] <- "Lack of documentation"
+no.account.tidy$noAccountReason[no.account.tidy$noAccountReason == "q8d"] <- "Lack of trust"
+no.account.tidy$noAccountReason[no.account.tidy$noAccountReason == "q8e"] <- "Religious reasons"
+no.account.tidy$noAccountReason[no.account.tidy$noAccountReason == "q8f"] <- "Lack of money"
+no.account.tidy$noAccountReason[no.account.tidy$noAccountReason == "q8g"] <- "Family member already has one"
+no.account.tidy$noAccountReason[no.account.tidy$noAccountReason == "q8h"] <- "Cannot get one"
+no.account.tidy$noAccountReason[no.account.tidy$noAccountReason == "q8i"] <- "No need for financial services"
+
+#Get data to display on the graph
+no.account.reason <- no.account.tidy %>% 
+  group_by(noAccountReason) %>% 
+  summarise(value = n()) %>% 
+  inner_join(reasons, by = c("noAccountReason"="reason")) %>% 
+  arrange(desc(order))
+
+#Convert columns to factors to preserve data order  
+no.account.reason <- transform(no.account.reason, noAccountReason=factor(noAccountReason,levels=unique(noAccountReason)))
+
+#Graphical display
+no.account.reason %>%
+ggplot(aes(x=noAccountReason, y=value, fill = value)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Reasons", y="Respondents", title = "Population Sample With No Financial Accounts - India", subtitle = "Comparision between ressons") + labs(fill = "Counts") + coord_flip()
+```
+
+Above graph suggests that `Lack of money` is a primary reason for not having an account with the financial institution. Is `Lack of money` only reason across various `gender`, `Age groups`, `Education level` and `Income groups` for not having an account with a financial institution? Following graphs show the breakdown by various groups.
+
+Reasons for not having an account based on `age groups`. The graph shows age group `below 26 years` age top reason for not having an account with a financial institution is different from other age groups.
+
+```{r, echo=T}
+#Graphical display
+no.account.age <- no.account.tidy %>% 
+  group_by(ageGroup, noAccountReason) %>% 
+  summarise(value = n()) %>%
+  inner_join(age.order, by = c("ageGroup"="age")) %>% 
+  arrange(order,noAccountReason)
+
+#Convert data to factors
+no.account.age <- transform(no.account.age, ageGroup=factor(ageGroup,levels=unique(ageGroup)))
+
+ggplot(no.account.age, aes(x=ageGroup, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Age Group", y="Respondents", title = "Reasons For Not Having Financial Account", subtitle = "Comparision between Age Groups") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
+```
+
+Reasons for not having an account based on `education level`. The graph shows reasons vary by `education level`.
+
+```{r, echo=T}
+#Graphical display
+no.account.edu <- no.account.tidy %>% 
+  group_by(eduGroup, noAccountReason) %>% 
+  summarise(value = n()) %>%
+  inner_join(edu.order, by = c("eduGroup"="edu")) %>% 
+  arrange(order,noAccountReason)
+
+no.account.edu <- transform(no.account.edu, eduGroup=factor(eduGroup,levels=unique(eduGroup)))
+
+ggplot(no.account.edu, aes(x=eduGroup, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Education Level", y="Respondents", title = "Reasons For Not Having Financial Account", subtitle = "Comparision between education level") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
+```
+
+Reasons for not having an account based on household income. It shows reasons vary by household income. For first `three` groups `Lack of money` is top reason.
+
+```{r, echo=T}
+#Graphical display
+no.account.income <- no.account.tidy %>% 
+  group_by(incomeGroup, noAccountReason) %>% 
+  summarise(value = n()) %>%
+  inner_join(income.order, by = c("incomeGroup"="income")) %>% 
+  arrange(order,noAccountReason)
+
+no.account.income <- transform(no.account.income, incomeGroup=factor(incomeGroup,levels=unique(incomeGroup)))
+
+ggplot(no.account.income, aes(x=incomeGroup, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Income Group", y="Respondents", title = "Reasons For Not Having Financial Account", subtitle = "Comparision between household income") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
+```
+
+Reasons for not having an account based on `gender`. `Male` and `Female` population has different reasons for not have financial accounts.
+
+```{r, echo=T}
+#Graphical display
+no.account.gender <- no.account.tidy %>% 
+  group_by(gender, noAccountReason) %>% 
+  summarise(value = n()) %>%
+  arrange(gender,noAccountReason)
+
+ggplot(no.account.gender, aes(x=gender, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Gender", y="Respondents", title = "Reasons For Not Having Financial Account", subtitle = "Comparision between gender") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
+```
+
+Comparing details of the graphs `gender`, `age groups`, `education level` and `income groups` against `overall graph`, it stands out `Lack of money` is not common among all the groups. Using `ANOVA` technique lets determine if there is a difference in reasons for not having an account.
+
+```{r, echo=T, warning=F, message=F}
+#Get complete data and summarise it by reasons
+no.account <- india.data %>% 
+  filter(!is.na(age)) %>% 
+  filter(account == 2) %>%
+  select (account, gender, ageGroup, incomeGroup, eduGroup, q8a, q8b, q8c, q8d, q8e, q8f, q8g, q8h, q8i) %>% 
+  gather(noAccountReason, value, -gender, -ageGroup, -incomeGroup, -eduGroup) %>% 
+  filter(value==1) %>% 
+  select(noAccountReason, gender, ageGroup, incomeGroup, eduGroup) %>% 
+  gather(resp, value, -noAccountReason) %>% 
+  select(noAccountReason, respAtt = value) %>% 
+  group_by(noAccountReason, respAtt) %>% 
+  summarise(respCount = n())
+
+no.account$noAccountReason[no.account$noAccountReason == "q8a"] <- "Financial institution too far away"
+no.account$noAccountReason[no.account$noAccountReason == "q8b"] <- "Too expensive have any account"
+no.account$noAccountReason[no.account$noAccountReason == "q8c"] <- "Lack of documentation"
+no.account$noAccountReason[no.account$noAccountReason == "q8d"] <- "Lack of trust"
+no.account$noAccountReason[no.account$noAccountReason == "q8e"] <- "Religious reasons"
+no.account$noAccountReason[no.account$noAccountReason == "q8f"] <- "Lack of money"
+no.account$noAccountReason[no.account$noAccountReason == "q8g"] <- "Family member already has one"
+no.account$noAccountReason[no.account$noAccountReason == "q8h"] <- "Cannot get one"
+no.account$noAccountReason[no.account$noAccountReason == "q8i"] <- "No need for financial services"
+
+no.account.tidy <- no.account %>% 
+  spread(noAccountReason, respCount) %>% 
+  inner_join(attOrder, by = c("respAtt" = "attName"))
+
+no.account.tidy <- arrange(no.account.tidy, order)
+
+no.account.tidy %>% 
+  select(-order) %>% 
+  kable(format='pandoc', caption = "Reasons For Not Having Financial Account")
+```
+
+The side-by-side plot shows responses are normally distributed across reasons not having a financial account. This satisfies `second` condition of `ANOVA`.
+
+```{r, echo=T}
+qplot(x = noAccountReason, y = respCount, data = no.account, color = respCount) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_smooth(method = "lm") +
+  labs(x="Reasons", y="Respondents", title = "Reasons For Not Having Financial Account", subtitle = "Side-by-side dot plot", color = "Count") 
+```
+
+Box plot showing responses, distribution across reasons for not having a financial account.
+
+```{r, echo=T}
+#Calculate mean
+fun_mean <- function(x){
+  return(data.frame(y=round(mean(x),3),label=round(mean(x,na.rm=T),3)))
+}
+
+fill <- "#4271AE"
+line <- "#1F3552"
+
+#Display Boxplot
+no.account %>% 
+  ggplot(aes(x = noAccountReason, y = respCount)) +
+        geom_boxplot(fill = fill, colour = line) +
+        scale_y_continuous(name = "Respondents") +
+        scale_x_discrete(name = "Reasons") +
+        stat_summary(fun.y = mean, geom="point",color="white", size=1) +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        stat_summary(fun.data = fun_mean, geom="text", vjust=-0.7) +
+        ggtitle("Average(Mean) Of Reasons For Not Having Financial Account")
+```
+
+Side-by-side dot plot and box plot show data within each group are very volatile. It suggests _distribution of the response variable follows a normal distribution_ and _variability_ across the groups exists. This meets `second` and `third` conditions.
+
+As data meets conditions of ANOVA, 
+
+**_Null hypothesis: There is no difference in reasons for not having an account with financial institution._** 
+
+$H_0: {\mu}_{fa} = {\mu}_{exp} = {\mu}_{ld} = {\mu}_{lt} = {\mu}_{rr} = {\mu}_{lm} = {\mu}_{fm} = {\mu}_{co} = {\mu}_{nf}$ 
+
+**_Alternative hypothesis: There is difference in reasons for not having an account with financial institution._**
+
+$H_A: {\mu}_{fa} \ne {\mu}_{exp} \ne {\mu}_{ld} \ne {\mu}_{lt} \ne {\mu}_{rr} \ne {\mu}_{lm} \ne {\mu}_{fm} \ne {\mu}_{co} \ne {\mu}_{nf}$ 
+
+```{r, echo=T, message=F, warning=F}
+#Calculate ANOVA
+no.account.anova <- lm(respCount ~ noAccountReason, data = no.account)
+summary(no.account.anova)
+```
+
+```{r, echo=T}
+anova(no.account.anova)
+
+#Plot residuals
+ggplot(data=as.data.frame(qqnorm( no.account.anova$residuals , plot=F)), mapping=aes(x=x, y=y)) + 
+    geom_point() + geom_smooth(method="lm", se=FALSE)  +
+        scale_y_continuous(name = "Sample Quantiles") +
+        scale_x_discrete(name = "Theoretical Quantiles") +
+        ggtitle("Normal Q-Q Plot")
+```
+
+###Conclusion
+**_- Data meets all `three` conditions of `ANOVA`._**
+
+**_- The normal plot of the residuals shows data points lie pretty close to the line. Some deviation is noticed near the ends. This suggests data is nearly normal._**
+
+**_- To answer the question, I have used linear regression model and applied ANOVA function to extract p-value._**
+
+**_- By applying linear regression model, it showed `Family member already has one` and `Lack of money` as top reasons for not having an account with financial institution._**
+
+**_- Adjusted $R^2$ value is 0.2915. Which means only 29% data can be explained using the linear model. Since value is so low, test can be considered as statistically significant._**
+
+**_- Finally, as `p-value` of the test is `0.0000000036`, indicating the evidence is strong enough to reject the alternative hypothesis, $H_A$  at a significance level of $\alpha = 0.05$. That is, the data provides strong evidence that thre is no difference in reasons for not having an account with financial institution across groups. This is type II error, even though `graphs` suggest `Lack of money` reason stands out, we failed to reject null hypothesis, $H_0$ ._**
+
+##Question 3: Using _India_ data, develop a predictive model to identify whether a respondent has a financial account.
+
+For developing predictive model, 
+- 70% of the dataset will be used as training data and 30% as test data. 
+- As output will be bi-variate, Generalized Linear Model(`GLM`) is used.
+
+```{r, echo=T}
+#Get complete data
+india.account <- india.data %>% 
+  filter(!is.na(age)) %>% 
+  select (account, gender, ageGroup, incomeGroup, eduGroup)
+
+#There are only two possible outcomes person can have account or not
+india.account$account <- ifelse(india.account$account == 1, 1, 0)
+
+set.seed(2005) #So results can be repeated
+#Create sample data
+samIdx <- sample(2,nrow(india.account), replace = T, prob = c(0.70,0.30))
+
+#Training data
+india.train <- india.account[samIdx == 1,]
+
+#Test data
+india.test <- india.account[samIdx == 2,]
+
+#Run GLM on training data
+india.glm <- glm(account ~ gender + ageGroup + incomeGroup + eduGroup, data = india.account, family = binomial(link = "logit"))
+  
+#Make prediction using test data
+india.predict <- predict(india.glm, india.test, type = "response")
+
+summary(india.glm)
+```
+
+The summary shows all the variables are significant.
+
+```{r, echo=T}
+#Generate prediction output
+india.predict.info <- rep(0,length(which(samIdx == 2)))
+india.predict.info[india.predict >=0.5] <- 1
+  
+cm <- confusionMatrix(india.predict.info, india.test$account)
+
+cm
+
+fourfoldplot(cm$table, color = c("#CC6666", "#99CC99"),conf.level = 0, margin = 1, main = "Mis-classification")
+```
+
+###Conclusion
+
+**_- As output variable can have two possible outcomes, respondent can have an account or not. I have used Generalized Linear Model(`GLM`) `binomial` family and `logit` link._**
+
+**_- Summary of the model suggests all the variables contribute significantly. Gender, age, and education contribute more than income group._**
+
+**_- The accuracy of the model is 64%._**
+
+##References
+
+- http://www.worldbank.org/en/programs/globalfindex.
+- https://onlinecourses.science.psu.edu/stat200/node/67
+- https://www.youtube.com/watch?v=xrAg3FLQ0ZI
+- http://stackoverflow.com/questions/23891140/r-how-to-visualize-confusion-matrix-using-the-caret-package
+- https://www.r-bloggers.com/anova-and-tukeys-test-on-r/

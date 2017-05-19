@@ -161,9 +161,9 @@ For the scope of the project, I will be using _account_ attribute as the respons
 
 - The variability across the groups is about equal.
 
-I will be using `box plot` to identify variability across the groups.
+This can be evaluated by using `rule of thumb` if the largest sample standard deviation divided by the smallest sample standard deviation `is not greater than two`, then assume that the population variances are equal. I will be using `box plot` to identify variability across the groups.
 
-Following `graph` shows a total number of respondents having an account with the financial institution.
+Following `graph` shows a total number of respondents having an account with the financial institution. Account ownership percentage is higher among _G7 Nations_ compared to _India_ and _China_.
 
 ```{r, echo=T}
 #Get India, China and G7 Nations data
@@ -180,58 +180,83 @@ colnames(in_cn_g7.data)[ncol(in_cn_g7.data)] <- "incomeGroup"
 in_cn_g7.data = cbind(in_cn_g7.data, ldply(in_cn_g7.data$educ, eduf))
 colnames(in_cn_g7.data)[ncol(in_cn_g7.data)] <- "eduGroup"
 
-#Graphical display
-in_cn_g7.data %>%
-  filter(hasAccount == "Yes") %>% 
+#Get percentage of population that has accounts.
+in_cn_g7.data1 <- in_cn_g7.data %>%
+  filter(age>0) %>%
   group_by(economy) %>% 
-  summarise(value = n()) %>%
-ggplot(aes(x=economy, y=value, fill = value)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Country", y="Accounts", title = "Population Sample With Financial Accounts", subtitle = "Comparision between countries") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + geom_text(aes(label=value), vjust=0, color="black") + labs(fill = "Ownership")
+  mutate(hasAcc = n())
+
+in_cn_g7.data1 <- in_cn_g7.data1 %>% 
+  filter(hasAccount=="Yes") %>% 
+  group_by(economy, ageGroup, hasAcc) %>% 
+  select (economy, ageGroup, hasAcc) %>% 
+  mutate(ageGroupTotal = n()) %>% 
+  distinct (ageGroupTotal)
+
+in_cn_g7.data1 <- in_cn_g7.data1 %>% 
+  mutate(accPer = round(ageGroupTotal*100/hasAcc, 3))
+
+#Graphical display
+in_cn_g7.data1 %>%
+  group_by(economy) %>% 
+  mutate(value = sum(accPer)) %>%
+ggplot(aes(x=economy, y=value, fill = value)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Country", y="Percentage Account Holders", title = "Population Sample With Financial Accounts", subtitle = "Comparision between countries") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + geom_text(aes(label=value), vjust=0, color="black") + labs(fill = "Ownership")
 ```
 
 Following data shows comparision of financial account ownership by age group accross countries.
 
 ```{r, echo=T}
 #Group data by age group
+in_cn_g7.data <- in_cn_g7.data %>%
+  filter(hasAccount=="Yes") %>% 
+  filter(age>0) %>%
+  group_by(economy) %>% 
+  mutate(hasAcc = n())
+
+in_cn_g7.data <- in_cn_g7.data %>% 
+  group_by(economy, ageGroup, hasAcc) %>% 
+  select (economy, ageGroup, hasAcc) %>% 
+  mutate(ageGroupTotal = n()) %>% 
+  distinct (ageGroupTotal)
+
+in_cn_g7.data <- in_cn_g7.data %>% 
+  mutate(accPer = round(ageGroupTotal*100/hasAcc, 3))
+
 age.in_cn_g7.data <- in_cn_g7.data %>%
-  filter(hasAccount == "Yes") %>% 
-  group_by(economy, ageGroup) %>% 
-  summarise(value = n()) %>% 
-  na.omit() %>% 
   inner_join(age.order, by = c("ageGroup" = "age")) %>% 
   arrange(economy, order) 
 
 age.in_cn_g7.data <- transform(age.in_cn_g7.data, ageGroup=factor(ageGroup,levels=unique(ageGroup)))
 colnames(age.in_cn_g7.data)[colnames(age.in_cn_g7.data)=="ageGroup"] <- "Age Group"
+colnames(age.in_cn_g7.data)[colnames(age.in_cn_g7.data)=="accPer"] <- "value"
+
+age.in_cn_g7.data$ageGroupTotal <- NULL
 
 #Display data in table format
 age.in_cn_g7.data %>% 
+  select(economy, `Age Group`, value) %>% 
   spread(economy, value) %>%
-  select(-order) %>% 
   kable(format='pandoc', caption = "Population Sample With Financial Accounts - Countries by Age Group")
 ```
 
-Following graph show that data, doesn't have the ideal bell-shaped appearance, and it suggests there are some outliers in the data.
+Following graph show that data, doesn't have the ideal bell-shaped appearance, and it suggests there are some outliers in the data. Financial account ownership differ between age groups in each country.
 
 ```{r, echo=T, warning=F, message=F}
 #Graphical display
-ggplot(age.in_cn_g7.data, aes(x=economy, y=value, fill = `Age Group`)) + geom_histogram(width=.9,stat="identity",position = "dodge") + labs(x="Country", y="Accounts", title = "Population Sample With Financial Accounts", subtitle = "Comparision between countries by Age Group") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + labs(fill = "Ownership") + scale_fill_brewer(palette="Paired")
+ggplot(age.in_cn_g7.data, aes(x=economy, y=value, fill = `Age Group`)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Country", y="Accounts", title = "Percentage of Population With Financial Accounts", subtitle = "Comparision between countries by age group") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + labs(fill = "Ownership") + scale_fill_brewer(palette="Paired")
 
 ```
 
-Side-by-side dot plot and box plot show data within each group are very volatile. It suggests _distribution of the response variable follows a normal distribution_ and _variability_ across the groups exists. This meets `second` and `third` conditions.
+Side-by-side dot plot show data within each group are very volatile. Graph also suggest, there are outliers in _Japan_ data. Box plot suggest _United States_ differ from rest of the countries. Since data is collected randomly in each country and graphs does not display anthing extreme we can assume _distribution of the response variable follows a normal distribution_ and _variability_ across the groups exists. This meets `second` and `third` conditions.  
 
 ```{r, echo=T}
 qplot(x = economy, y = value, data = age.in_cn_g7.data, color = value) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   geom_smooth(method = "lm") +
-  labs(x="Country", y="Accounts", title = "Financial Account Ownership By Country", subtitle = "Side-by-side dot plot", color = "Ownership") 
+  labs(x="Country", y="% of Accounts Holders By Age Group", title = "Financial Account Ownership By Country And Age Group", subtitle = "Side-by-side dot plot", color = "Ownership") 
 ```
 
 ```{r, echo=T}
-fun_mean <- function(x){
-  return(data.frame(y=round(mean(x),3),label=round(mean(x,na.rm=T),3)))
-}
-
 fill <- "#4271AE"
 line <- "#1F3552"
 
@@ -240,19 +265,30 @@ age.in_cn_g7.data %>%
         geom_boxplot(fill = fill, colour = line) +
         scale_y_continuous(name = "Account") +
         scale_x_discrete(name = "Country") +
-        stat_summary(fun.y = mean, geom="point",color="white", size=1) +
         theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-        stat_summary(fun.data = fun_mean, geom="text", vjust=-0.7) +
         ggtitle("Average(Mean) Account Ownership By Country")
 ```
 
-As data meets conditions of ANOVA, 
+Standard deviations between countries range between `3.915` and `11.037`. Even though quotient is greater than `two` when maximum standard deviation is divided by minimum standard deviation(`r round(11.037/3.915,3)`), we can assume `age group` variances are equal across countries as data is collected randomly in each country.
 
-**_Null hypothesis: There is no difference in account ownership between countries and age group._** 
+```{r, echo=T}
+age.in_cn_g7.data %>% 
+  select(economy, `Age Group`, value) %>% 
+  group_by(economy) %>% 
+  mutate(ecoSD = round(sd(value),3)) %>% 
+  select(economy, ecoSD) %>% 
+  distinct(ecoSD) %>% 
+  spread(economy, ecoSD) %>%
+  kable(format='pandoc', caption = "Standard Deviation by Countries Based on Age Group")
+```
+
+Hypothesis test.
+
+**_Null hypothesis: There is no difference in account ownership percentage between age groups across countries._** 
 
 $H_0: {\mu}_{can} = {\mu}_{chn} = {\mu}_{fra} = {\mu}_{deu} = {\mu}_{ind} = {\mu}_{ita} = {\mu}_{jpn} = {\mu}_{uk} = {\mu}_{usa}$ 
 
-**_Alternative hypothesis: There is difference in account ownership between countries and age group._**
+**_Alternative hypothesis: There is difference in account ownership percentage between age groups across countries._**
 
 $H_A: {\mu}_{can} \ne {\mu}_{chn} \ne {\mu}_{fra} \ne {\mu}_{deu} \ne {\mu}_{ind} \ne {\mu}_{ita} \ne {\mu}_{jpn} \ne {\mu}_{uk} \ne {\mu}_{usa}$ 
 
@@ -272,15 +308,17 @@ ggplot(data=as.data.frame(qqnorm( age.anova$residuals , plot=F)), mapping=aes(x=
 ```
 
 ###Conclusion
-**_- Data meets all `three` conditions of `ANOVA`._**
+**_- Data meets fairly all `three` conditions of `ANOVA`._**
 
 **_- The normal plot of the residuals shows data points lie pretty close to the line. Some deviation is noticed near the ends. This suggests data is nearly normal._**
 
-**_- The `p-value` of the test is 0.037, less than the default significance level of $\alpha = 0.05$. We accept null hypothesis $H_0$. There is no difference in account ownership between countries and age group._**
+**_- The `p-value` of the test is 0.0026, less than the default significance level of $\alpha = 0.05$. We reject null hypothesis $H_0$. In other words, there is difference in account ownership percentage between age groups across countries._**
+
+**_- As data was collected from each country based on size of the population, weighted sampling, aggregates are converted to percentages._**
 
 ##Question 2: _India_ has a good portion of the population, that does not have a financial account. Is there any difference in reasons for not having financial account across various groups?
 
-I will be using `linear regression` and then apply `ANOVA` technique to answer the question. Following `graph` shows a total number of respondents that does not have an account with the financial institution for various reasons.
+I will be using `ANOVA` technique to answer the question and use `TukeyHSD` function to identify if any reason pair stands out. Following `graph` shows a total number of respondents that does not have an account with the financial institution for various reasons.
 
 ```{r, echo=T}
 #Get India data
@@ -331,37 +369,45 @@ no.account.reason %>%
 ggplot(aes(x=noAccountReason, y=value, fill = value)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Reasons", y="Respondents", title = "Population Sample With No Financial Accounts - India", subtitle = "Comparision between ressons") + labs(fill = "Counts") + coord_flip()
 ```
 
-Above graph suggests that `Lack of money` is a primary reason for not having an account with the financial institution. Is `Lack of money` only reason across various `gender`, `Age groups`, `Education level` and `Income groups` for not having an account with a financial institution? Following graphs show the breakdown by various groups.
+Above graph suggests that `Lack of money` is a primary reason for not having an account with the financial institution. Is `Lack of money` only reason across various `Gender`, `Age groups`, `Education level` and `Income groups` for not having an account with a financial institution? Following graphs show the breakdown by various groups.
 
-Reasons for not having an account based on `age groups`. The graph shows age group `below 26 years` age top reason for not having an account with a financial institution is different from other age groups.
+Reasons for not having an account based on `Age Groups`. The graph shows age group `below 26 years` age top reason for not having an account with a financial institution is different from other age groups.
 
 ```{r, echo=T}
 #Graphical display
 no.account.age <- no.account.tidy %>% 
   group_by(ageGroup, noAccountReason) %>% 
-  summarise(value = n()) %>%
+  summarise(ageReasonvalue = n()) %>%
   inner_join(age.order, by = c("ageGroup"="age")) %>% 
   arrange(order,noAccountReason)
 
+no.account.age <- no.account.age %>% group_by(ageGroup) %>% mutate(agevalue = sum(ageReasonvalue))
+
+no.account.age <- no.account.age %>% mutate(value = round(ageReasonvalue * 100/agevalue,3))
 #Convert data to factors
 no.account.age <- transform(no.account.age, ageGroup=factor(ageGroup,levels=unique(ageGroup)))
 
-ggplot(no.account.age, aes(x=ageGroup, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Age Group", y="Respondents", title = "Reasons For Not Having Financial Account", subtitle = "Comparision between Age Groups") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
+ggplot(no.account.age, aes(x=ageGroup, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Age Group", y="Respondents %", title = "Reasons For Not Having Financial Account", subtitle = "Percentage comparision between Age Groups") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
 ```
 
-Reasons for not having an account based on `education level`. The graph shows reasons vary by `education level`.
+Reasons for not having an account based on `Education Level`. The graph shows reasons vary by `Education Level`.
 
 ```{r, echo=T}
 #Graphical display
 no.account.edu <- no.account.tidy %>% 
   group_by(eduGroup, noAccountReason) %>% 
-  summarise(value = n()) %>%
+  summarise(eduReasonvalue = n()) %>%
   inner_join(edu.order, by = c("eduGroup"="edu")) %>% 
   arrange(order,noAccountReason)
 
+no.account.edu <- no.account.edu %>% group_by(eduGroup) %>% mutate(eduvalue = sum(eduReasonvalue))
+
+no.account.edu <- no.account.edu %>% mutate(value = round(eduReasonvalue * 100/eduvalue,3))
+
+#Convert data to factors
 no.account.edu <- transform(no.account.edu, eduGroup=factor(eduGroup,levels=unique(eduGroup)))
 
-ggplot(no.account.edu, aes(x=eduGroup, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Education Level", y="Respondents", title = "Reasons For Not Having Financial Account", subtitle = "Comparision between education level") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
+ggplot(no.account.edu, aes(x=eduGroup, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Education Level", y="Respondents %", title = "Reasons For Not Having Financial Account", subtitle = "Percentage comparision between Education Level") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
 ```
 
 Reasons for not having an account based on household income. It shows reasons vary by household income. For first `three` groups `Lack of money` is top reason.
@@ -370,13 +416,18 @@ Reasons for not having an account based on household income. It shows reasons va
 #Graphical display
 no.account.income <- no.account.tidy %>% 
   group_by(incomeGroup, noAccountReason) %>% 
-  summarise(value = n()) %>%
+  summarise(incomeReasonvalue = n()) %>%
   inner_join(income.order, by = c("incomeGroup"="income")) %>% 
   arrange(order,noAccountReason)
 
+no.account.income <- no.account.income %>% group_by(incomeGroup) %>% mutate(incomevalue = sum(incomeReasonvalue))
+
+no.account.income <- no.account.income %>% mutate(value = round(incomeReasonvalue * 100/incomevalue,3))
+
+#Convert data to factors
 no.account.income <- transform(no.account.income, incomeGroup=factor(incomeGroup,levels=unique(incomeGroup)))
 
-ggplot(no.account.income, aes(x=incomeGroup, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Income Group", y="Respondents", title = "Reasons For Not Having Financial Account", subtitle = "Comparision between household income") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
+ggplot(no.account.income, aes(x=incomeGroup, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Income Group", y="Respondents %", title = "Reasons For Not Having Financial Account", subtitle = "Percentage comparision between Household Income") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
 ```
 
 Reasons for not having an account based on `gender`. `Male` and `Female` population has different reasons for not have financial accounts.
@@ -385,10 +436,16 @@ Reasons for not having an account based on `gender`. `Male` and `Female` populat
 #Graphical display
 no.account.gender <- no.account.tidy %>% 
   group_by(gender, noAccountReason) %>% 
-  summarise(value = n()) %>%
+  summarise(genderReasonvalue = n()) %>%
   arrange(gender,noAccountReason)
 
-ggplot(no.account.gender, aes(x=gender, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Gender", y="Respondents", title = "Reasons For Not Having Financial Account", subtitle = "Comparision between gender") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
+no.account.gender <- no.account.gender %>% group_by(gender) %>% mutate(gendervalue = sum(genderReasonvalue))
+
+no.account.gender <- no.account.gender %>% mutate(value = round(genderReasonvalue * 100/gendervalue,3))
+
+#Convert data to factors
+
+ggplot(no.account.gender, aes(x=gender, y=value, fill = noAccountReason)) + geom_bar(width=.9,stat="identity",position = "dodge") + labs(x="Gender", y="Respondents %", title = "Reasons For Not Having Financial Account", subtitle = "Percentage comparision between Gender") + labs(fill = "Reasons") + scale_fill_brewer(palette="Paired") + coord_flip()
 ```
 
 Comparing details of the graphs `gender`, `age groups`, `education level` and `income groups` against `overall graph`, it stands out `Lack of money` is not common among all the groups. Using `ANOVA` technique lets determine if there is a difference in reasons for not having an account.
@@ -396,7 +453,7 @@ Comparing details of the graphs `gender`, `age groups`, `education level` and `i
 ```{r, echo=T, warning=F, message=F}
 #Get complete data and summarise it by reasons
 no.account <- india.data %>% 
-  filter(!is.na(age)) %>% 
+  filter(age>0) %>% 
   filter(account == 2) %>%
   select (account, gender, ageGroup, incomeGroup, eduGroup, q8a, q8b, q8c, q8d, q8e, q8f, q8g, q8h, q8i) %>% 
   gather(noAccountReason, value, -gender, -ageGroup, -incomeGroup, -eduGroup) %>% 
@@ -417,50 +474,66 @@ no.account$noAccountReason[no.account$noAccountReason == "q8g"] <- "Family membe
 no.account$noAccountReason[no.account$noAccountReason == "q8h"] <- "Cannot get one"
 no.account$noAccountReason[no.account$noAccountReason == "q8i"] <- "No need for financial services"
 
+no.account <- no.account %>% group_by(respAtt) %>% mutate(reasonvalue = sum(respCount))
+no.account <- no.account %>% mutate(respPer = round(respCount * 100/reasonvalue,3))
+
+
 no.account.tidy <- no.account %>% 
-  spread(noAccountReason, respCount) %>% 
+  select(-respCount, -reasonvalue) %>% 
+  spread(noAccountReason, respPer) %>% 
   inner_join(attOrder, by = c("respAtt" = "attName"))
 
 no.account.tidy <- arrange(no.account.tidy, order)
 
+colnames(no.account.tidy)[colnames(no.account.tidy)=="respAtt"] <- "Respondent Attributes"
+
+no.account.tidy$order <- NULL
+
 no.account.tidy %>% 
-  select(-order) %>% 
   kable(format='pandoc', caption = "Reasons For Not Having Financial Account")
 ```
 
 The side-by-side plot shows responses are normally distributed across reasons not having a financial account. This satisfies `second` condition of `ANOVA`.
 
 ```{r, echo=T}
-qplot(x = noAccountReason, y = respCount, data = no.account, color = respCount) +
+qplot(x = respAtt, y = respPer, data = no.account, color = respPer) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   geom_smooth(method = "lm") +
-  labs(x="Reasons", y="Respondents", title = "Reasons For Not Having Financial Account", subtitle = "Side-by-side dot plot", color = "Count") 
+  labs(x="Response Group", y="Reason Percentage", title = "Reasons For Not Having Financial Account", subtitle = "Side-by-side dot plot Response Group Vs. Reason Percentage", color = "Percentage") 
 ```
 
-Box plot showing responses, distribution across reasons for not having a financial account.
+Box plot showing responses, distribution across groups for not having a financial account. There are outliers in some of the groups. Average(mean) of each group varies but is reasonable.
 
 ```{r, echo=T}
 #Calculate mean
-fun_mean <- function(x){
-  return(data.frame(y=round(mean(x),3),label=round(mean(x,na.rm=T),3)))
-}
-
 fill <- "#4271AE"
 line <- "#1F3552"
 
 #Display Boxplot
 no.account %>% 
-  ggplot(aes(x = noAccountReason, y = respCount)) +
+  ggplot(aes(x = respAtt, y = respPer)) +
         geom_boxplot(fill = fill, colour = line) +
-        scale_y_continuous(name = "Respondents") +
-        scale_x_discrete(name = "Reasons") +
-        stat_summary(fun.y = mean, geom="point",color="white", size=1) +
+        scale_y_continuous(name = "Reason Percentage") +
+        scale_x_discrete(name = "Response Group") +
         theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-        stat_summary(fun.data = fun_mean, geom="text", vjust=-0.7) +
         ggtitle("Average(Mean) Of Reasons For Not Having Financial Account")
 ```
 
 Side-by-side dot plot and box plot show data within each group are very volatile. It suggests _distribution of the response variable follows a normal distribution_ and _variability_ across the groups exists. This meets `second` and `third` conditions.
+
+Standard deviations between reasons range between `6.769` and `10.140`. Quotient is less than `two` when maximum standard deviation is divided by minimum standard deviation(`r round(10.140/6.769,3)`), we can assume reasons variances are equal across each response group for not having account.
+
+```{r, echo=T}
+no.account %>% 
+  select(noAccountReason, respAtt, respPer) %>% 
+  group_by(respAtt) %>% 
+  mutate(resonSD = round(sd(respPer),3)) %>% 
+  select(respAtt, resonSD) %>% 
+  distinct(resonSD) %>% 
+  spread(respAtt, resonSD) %>%
+  kable(format='pandoc', caption = "Standard Deviation by Response Group Based on Reasons")
+```
+
 
 As data meets conditions of ANOVA, 
 
@@ -472,14 +545,23 @@ $H_0: {\mu}_{fa} = {\mu}_{exp} = {\mu}_{ld} = {\mu}_{lt} = {\mu}_{rr} = {\mu}_{l
 
 $H_A: {\mu}_{fa} \ne {\mu}_{exp} \ne {\mu}_{ld} \ne {\mu}_{lt} \ne {\mu}_{rr} \ne {\mu}_{lm} \ne {\mu}_{fm} \ne {\mu}_{co} \ne {\mu}_{nf}$ 
 
+
 ```{r, echo=T, message=F, warning=F}
+options("scipen"=100, "digits"=16)
 #Calculate ANOVA
-no.account.anova <- lm(respCount ~ noAccountReason, data = no.account)
+no.account.anova <- aov(respPer ~ noAccountReason, data = no.account)
 summary(no.account.anova)
 ```
 
-```{r, echo=T}
-anova(no.account.anova)
+```{r, echo=T, warning=F, message=F}
+#Get Tukey output
+tukey.output<-TukeyHSD(no.account.anova)
+tukey.output<-data.frame(tukey.output$noAccountReason, stringsAsFactors = F)
+tukey.output$pairs <- rownames(tukey.output)
+rownames(tukey.output) <- NULL
+tukey.output <- tukey.output %>% filter((upr-lwr)>0) %>% mutate(rangeDiff = (upr-lwr))
+tukey.output <- tukey.output %>% arrange((`p.adj`), desc(diff))
+tukey.output %>% kable(format='pandoc', caption = "TukeyHSD Results")
 
 #Plot residuals
 ggplot(data=as.data.frame(qqnorm( no.account.anova$residuals , plot=F)), mapping=aes(x=x, y=y)) + 
@@ -494,13 +576,9 @@ ggplot(data=as.data.frame(qqnorm( no.account.anova$residuals , plot=F)), mapping
 
 **_- The normal plot of the residuals shows data points lie pretty close to the line. Some deviation is noticed near the ends. This suggests data is nearly normal._**
 
-**_- To answer the question, I have used linear regression model and applied ANOVA function to extract p-value._**
+**_- As `p-value` of the test is equal to `0.0000000000000002`, indicating the evidence is strong enough to reject the null hypothesis, $H_0$  at a significance level of $\alpha = 0.05$. That is, the data provides strong evidence that there is difference in reasons for not having an account with financial institution across groups._**
 
-**_- By applying linear regression model, it showed `Family member already has one` and `Lack of money` as top reasons for not having an account with financial institution._**
-
-**_- Adjusted $R^2$ value is 0.2915. Which means only 29% data can be explained using the linear model. Since value is so low, test can be considered as statistically significant._**
-
-**_- Finally, as `p-value` of the test is `0.0000000036`, indicating the evidence is strong enough to reject the alternative hypothesis, $H_A$  at a significance level of $\alpha = 0.05$. That is, the data provides strong evidence that thre is no difference in reasons for not having an account with financial institution across groups. This is type II error, even though `graphs` suggest `Lack of money` reason stands out, we failed to reject null hypothesis, $H_0$ ._**
+**_Output of Tukey Honest Significant Differences(TukeyHSD) function suggests the difference between reason pairs `Lack of money-Cannot get one` has a p-value of `0.0000000000000211` and is statistically significant. At 95% confidence interval, reason pair difference is between 15.75% and 21.30% with `Lack of money` averaging 18.52% higher. That means, there is 18.52% higher chance, for a response group not having an account with financial institution is because of `Lack of money`._**
 
 ##Question 3: Using _India_ data, develop a predictive model to identify whether a respondent has a financial account.
 
@@ -565,3 +643,5 @@ fourfoldplot(cm$table, color = c("#CC6666", "#99CC99"),conf.level = 0, margin = 
 - https://www.youtube.com/watch?v=xrAg3FLQ0ZI
 - http://stackoverflow.com/questions/23891140/r-how-to-visualize-confusion-matrix-using-the-caret-package
 - https://www.r-bloggers.com/anova-and-tukeys-test-on-r/
+- https://stats.stackexchange.com/questions/253588/interpreting-tukeyhsd-output-in-r
+
